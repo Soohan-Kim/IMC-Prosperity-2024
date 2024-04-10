@@ -1,0 +1,4 @@
+spread vol vs. mid price vol => one-sided limit order placement?
+spread ma mean reversion => limit order placement based on spread width -> reversion to mean
+
+lob wap - mid_prc vs. mid_prc chg => 승률 높이는 방법: 차이 작을때 필터링 OR 차이값 time series 상 움직임 지속성/강세 이용, multi-step mid_prc chg에 대해 regression
