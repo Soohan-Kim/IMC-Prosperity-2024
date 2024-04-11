@@ -159,40 +159,70 @@ class Trader:
             mid_price = 0
             spread = 0
             if len(order_depth.sell_orders) != 0 and len(order_depth.buy_orders) != 0:
-                best_ask, _ = list(order_depth.sell_orders.items())[0]
-                best_bid, _ = list(order_depth.buy_orders.items())[0]
-                mid_price = (best_ask + best_bid)/2
+                best_ask, best_ask_amount = list(order_depth.sell_orders.items())[0]
+                best_bid, best_bid_amount = list(order_depth.buy_orders.items())[0]
+                mid_price = int((best_ask + best_bid)/2)
                 spread = best_ask - best_bid
 
-            if len(order_depth.sell_orders) != 0:
-                best_ask, best_ask_amount = list(order_depth.sell_orders.items())[0]
-                # if int(best_ask) < acceptable_price:
-                #     # print("BUY", str(-best_ask_amount) + "x", best_ask)
-                #     # orders.append(Order(product, best_ask, -best_ask_amount))
-                #     amt = pos_limits[product] - cur_pos
-                #     #print("BUY", str(amt) + "x", best_ask)
-                #     orders.append(Order(product, best_ask, amt))
-                if mid_price > acceptable_price:
-                    alloc = -((pos_limits[product] + cur_pos) // 2)
-                    orders.append(Order(product, best_ask, alloc))
-                    orders.append(Order(product, best_ask-1, alloc))
+            #if len(order_depth.sell_orders) != 0:
+                #amt = -((pos_limits[product] + cur_pos)//2)
+                #orders.append(Order(product, mid_price+1, amt))
+                #orders.append(Order(product, mid_price, amt))
+                #best_ask, best_ask_amount = list(order_depth.sell_orders.items())[0]
+                if int(best_ask) < acceptable_price:
+                    for (ask_info) in list(order_depth.sell_orders.items()):
+                        ask_price, ask_amount = ask_info
+                    # print("BUY", str(-best_ask_amount) + "x", best_ask)
+                    # orders.append(Order(product, best_ask, -best_ask_amount))
+                        amt = pos_limits[product] - cur_pos
+                    #print("BUY", str(amt) + "x", best_ask)
+                        if int(ask_price) < acceptable_price:
+                            orders.append(Order(product, ask_price, min(-ask_amount, amt)))
+                            cur_pos += min(-ask_amount, amt)
+                # elif acceptable_price > int(best_bid):
+                #     allocs = [p for p in range(int(best_ask), int(acceptable_price), -1)]
+                #     amt = -((pos_limits[product] + cur_pos)//len(allocs))
+                #     for p in allocs:
+                #         orders.append(Order(product, p, amt))
+
+                # if mid_price < acceptable_price:
+                #     orders.append(Order(product, best_ask, 10))
+                #     orders.append(Order(product, best_ask-1, 10))
+                    #alloc = -((pos_limits[product] + cur_pos) // 2)
+                    #orders.append(Order(product, best_ask, alloc))
+                    #orders.append(Order(product, best_ask-1, alloc))
                     #orders.append(Order(product, best_ask-3, alloc))
                     #orders.append(Order(product, best_ask-4, alloc))
                     #orders.append((Order(product, int(mid_price)+1, -10)))
                     #orders.append((Order(product, int(mid_price), -10)))
 
-            if len(order_depth.buy_orders) != 0:
-                best_bid, best_bid_amount = list(order_depth.buy_orders.items())[0]
-                # if int(best_bid) > acceptable_price:
-                #     # print("SELL", str(best_bid_amount) + "x", best_bid)
-                #     # orders.append(Order(product, best_bid, -best_bid_amount))
-                #     amt = -pos_limits[product] - cur_pos
-                #     #print("SELL", str(amt) + "x", best_bid)
-                #     orders.append(Order(product, best_bid, amt))
-                if mid_price < acceptable_price:
-                    alloc = (pos_limits[product] - cur_pos)//2
-                    orders.append(Order(product, best_bid, alloc))
-                    orders.append(Order(product, best_bid+1, alloc))
+            #if len(order_depth.buy_orders) != 0:
+                #amt = (pos_limits[product] - cur_pos)//2
+                #orders.append(Order(product, mid_price, amt))
+                #orders.append(Order(product, mid_price-1, amt))
+                #best_bid, best_bid_amount = list(order_depth.buy_orders.items())[0]
+                if int(best_bid) > acceptable_price:
+                    # print("SELL", str(best_bid_amount) + "x", best_bid)
+                    # orders.append(Order(product, best_bid, -best_bid_amount))
+                    for bid_info in list(order_depth.buy_orders.items()):
+                        bid_price, bid_amount = bid_info
+                        amt = -pos_limits[product] - cur_pos
+                        #print("SELL", str(amt) + "x", best_bid)
+                        if int(bid_price) > acceptable_price:
+                            orders.append(Order(product, bid_price, max(amt, -bid_amount)))
+                            cur_pos -= max(amt, -bid_amount)
+                # elif acceptable_price < int(best_ask):
+                #     allocs = [p for p in range(int(best_bid), int(acceptable_price)+1)]
+                #     amt = (pos_limits[product] - cur_pos)//len(allocs)
+                #     for p in allocs:
+                #         orders.append(Order(product, p, amt))
+
+                # if mid_price > acceptable_price:
+                #     orders.append(Order(product, best_bid, -10))
+                #     orders.append(Order(product, best_bid+1, -10))
+                    #alloc = (pos_limits[product] - cur_pos)//2
+                    #orders.append(Order(product, best_bid, alloc))
+                    #orders.append(Order(product, best_bid+1, alloc))
                     #orders.append(Order(product, best_bid+3, alloc))
                     #orders.append(Order(product, best_bid+4, alloc))
                     #orders.append((Order(product, int(mid_price), 10)))
