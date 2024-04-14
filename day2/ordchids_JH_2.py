@@ -1,13 +1,11 @@
 from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder, Symbol, Trade, TradingState
-from typing import List
-# import statistics
-# import math
-import sys
+from typing import List, Any
 import json
+import pandas as pd
+import numpy as np
+import statistics
+import math
 from collections import deque
-
-from typing import Any
-
 
 class Logger:
     def __init__(self) -> None:
@@ -112,43 +110,34 @@ class Logger:
 
         return value[:max_length - 3] + "..."
 
-
 logger = Logger()
 
 
 class Trader:
     position = {'AMETHYSTS': 0, 'STARFRUIT': 0, 'ORCHIDS': 0}
     POSITION_LIMIT = {'AMETHYSTS': 20, 'STARFRUIT': 20, 'ORCHIDS': 100}
-
-    reg_params = [-0.01869561, 0.0455032, 0.16316049, 0.8090892]
-    reg_intercept = 4.481696494462085
+    
+    reg_params = [
+        0.006305986347540827,
+        -0.01214216608632497,
+        0.009966507857309953,
+        -0.011357179548720021,
+        0.0144586905386713,
+        0.022841418289938183,
+        0.05102468136008776,
+        0.19978102347281332,
+        0.7189835095609063
+    ]
+    reg_intercept = 0.6951698609096012
     starfruit_midprice = deque(maxlen=len(reg_params))
 
-    orchid_regression_params = [-11, 8.5, 5.4]  # [sunlight_less_than_7hrs, shipping_cost, humidity_diff_outside_range]
-    orchid_regression_intercept = 1000
-    orchid_predictors = deque(maxlen=3)  # assuming three predictors as per coefficients
-
+    conversions = 0
 
     def prepare_data(self, product):
         return (
             self.position[product],
             self.POSITION_LIMIT[product]
         )
-
-    def best_price(self, order_dict, buy=0):
-        tot_vol = 0
-        best_val = -1
-        max_vol = -1
-
-        for ask, vol in order_dict:
-            if buy == 0:
-                vol *= -1
-            tot_vol += vol
-            if tot_vol > max_vol:
-                max_vol = vol
-                best_val = ask
-
-        return best_val
 
     def weighted_price(self, order_dict):
         total_vol = 0
@@ -175,18 +164,9 @@ class Trader:
 
         book_ask = sorted(order_depth.sell_orders.items())
         book_bid = sorted(order_depth.buy_orders.items(), key=lambda x: -x[0])
-
-        logger.print(book_bid)
-        logger.print(book_ask)
-
-        # best_ask_price = book_ask[0][0]
-        # best_bid_price = book_bid[0][0]
-
-        best_ask_price = self.best_price(book_ask, 0)
-        best_bid_price = self.best_price(book_bid, 1)
-
-        # best_ask_price = self.weighted_price(book_ask)
-        # best_bid_price = self.weighted_price(book_bid)
+        
+        best_ask_price = self.weighted_price(book_ask)
+        best_bid_price = self.weighted_price(book_bid)
 
         self.starfruit_midprice.append((best_ask_price + best_bid_price) / 2)
 
@@ -199,113 +179,123 @@ class Trader:
 
         orders: list[Order] = []
 
-        sell_positions = self.position['STARFRUIT']
-        for p, vol in book_ask:
-            if sell_positions < position_limit and \
-                    (p <= predict_bid or (curr_position < 0 and p == predict_bid + 1)):
-                order_for = min(-vol, position_limit - sell_positions)
-                sell_positions += order_for
+        buy_positions = curr_position
+        for ask_price, vol in book_ask:
+            if buy_positions < position_limit and (ask_price <= predict_bid or (curr_position < 0 and ask_price == predict_bid + 1)):
+                order_for = min(-vol, position_limit - buy_positions)
+                buy_positions += order_for
                 assert (order_for >= 0)
-                orders.append(Order(product, p, order_for))
+                orders.append(Order(product, ask_price, order_for))
 
         high_bid = min(best_bid_price + 1, predict_bid)
-        if sell_positions < position_limit:
-            orders.append(Order(product, high_bid, position_limit - sell_positions))
+        if buy_positions < position_limit:
+            orders.append(Order(product, high_bid, position_limit - buy_positions))
 
-        buy_positions = self.position['STARFRUIT']
-        for p, vol in book_bid:
-            if buy_positions > -position_limit and \
-                    (p >= predict_ask or (curr_position > 0 and p + 1 == predict_ask)):
-                order_for = max(-vol, -position_limit - buy_positions)
-                buy_positions += order_for
+        sell_positions = curr_position
+        for bid_price, vol in book_bid:
+            if sell_positions > -position_limit and (bid_price >= predict_ask or (curr_position > 0 and bid_price + 1 == predict_ask)):
+                order_for = max(-vol, -position_limit - sell_positions)
+                sell_positions += order_for
                 assert (order_for <= 0)
-                orders.append(Order(product, p, order_for))
+                orders.append(Order(product, bid_price, order_for))
 
         low_ask = max(best_ask_price - 1, predict_ask)
-        if buy_positions > -position_limit:
-            orders.append(Order(product, low_ask, -position_limit - buy_positions))
+        if sell_positions > -position_limit:
+            orders.append(Order(product, low_ask, -position_limit - sell_positions))
 
         return orders
+    
+    def order_amethysts(self, state):
+        orders: list[Order] = []
+        
+        product = 'AMETHYSTS'
+        curr_position, position_limit = self.prepare_data(product)
+        order_depth: OrderDepth = state.order_depths[product]
+        
+        best_ask, best_ask_amount = list(order_depth.sell_orders.items())[0]
+        best_bid, best_bid_amount = list(order_depth.buy_orders.items())[0]
 
-    def compute_orchid_prediction(self, observation):
-        predict = self.orchid_regression_intercept
-        # Construct predictors based on observation data
-        sunlight_less_than_7hrs = 1 if observation.sunlight < 4200 else 0
-        shipping_cost = observation.transportFees + observation.exportTariff + observation.importTariff
-        humidity_diff_outside_range = abs(observation.humidity - 70) if observation.humidity < 60 or observation.humidity > 80 else 0
+        if (best_bid > 10000):
+            orders.append(Order(product, best_bid, -best_bid_amount))  # The bid and ask amount impact market.
+            curr_position += -best_bid_amount
+        elif (best_ask < 10000):
+            orders.append(Order(product, best_ask, -best_ask_amount))
+            curr_position += -best_ask_amount
 
-        predictors = [sunlight_less_than_7hrs, shipping_cost, humidity_diff_outside_range]
+        if (best_bid <= 9998):
+            order_for = position_limit - curr_position
+            orders.append(Order(product, best_bid + 1, order_for))
+        
+        if (best_ask >= 10002):
+            order_for = -position_limit - curr_position
+            orders.append(Order(product, best_ask - 1, order_for))
+        
+        return orders
 
-        for coef, val in zip(self.orchid_regression_params, predictors):
-            predict += coef * val
-
-        return int(round(predict))
 
     def order_orchids(self, state):
         product = 'ORCHIDS'
         curr_position, position_limit = self.prepare_data(product)
-        order_depth: OrderDepth = state.order_depths[product]
+        order_depth = state.order_depths[product]
+        foreign_observation = state.observations.conversionObservations[product]
 
-        # Get the latest market observations
-        observation = state.observations[product]  # Assuming observations is a dictionary of ConversionObservations
-
-        predict_price = self.compute_orchid_prediction(observation)
+        # Calculate effective foreign market prices
+        export_sell_price = foreign_observation.bidPrice - foreign_observation.transportFees - foreign_observation.exportTariff
+        import_buy_price = foreign_observation.askPrice + foreign_observation.transportFees + foreign_observation.importTariff
 
         orders = []
         book_ask = sorted(order_depth.sell_orders.items())
         book_bid = sorted(order_depth.buy_orders.items(), key=lambda x: -x[0])
 
-        best_ask_price = self.best_price(book_ask, 0)
-        best_bid_price = self.best_price(book_bid, 1)
+        # Buying from the local market to sell in the foreign market if it's profitable
+        for ask_price, vol in book_ask:
+            if curr_position < position_limit and ask_price < export_sell_price:
+                order_for = min(-vol, position_limit - curr_position)
+                if order_for > 0:
+                    orders.append(Order(product, ask_price, order_for))
+                    curr_position += order_for
+                    self.get_conversions(state, order_for)
 
-        if predict_price < best_ask_price and curr_position < position_limit:
-            orders.append(Order(product, predict_price, position_limit - curr_position))
-        if predict_price > best_bid_price and curr_position > -position_limit:
-            orders.append(Order(product, predict_price, -position_limit - curr_position))
+        # Buying from the foreign market to sell in the local market if it's profitable
+        for bid_price, vol in book_bid:
+            if curr_position > -position_limit and bid_price > import_buy_price:
+                order_for = max(-vol, -position_limit - curr_position)
+                if order_for < 0:
+                    orders.append(Order(product, bid_price, order_for))
+                    curr_position += order_for
+                    self.get_conversions(state, order_for)
 
         return orders
 
+    def get_conversions(self, state, transaction_volume):
+        product = 'ORCHIDS'
+        conversion_limit = 100 
+        try: 
+            current_position = state.position[product]
+            new_position = current_position + transaction_volume
+            conversions_needed = min(abs(new_position), conversion_limit)
+            self.conversions = conversions_needed
+        except:
+            self.conversions = 0
+        return self.conversions
+
     def run(self, state: TradingState):
-        logger.print("traderData: " + state.traderData)
-        logger.print("Observations: " + str(state.observations))
+        print("traderData: " + state.traderData)
+        print("Observations: " + str(state.observations))
 
         result = {'AMETHYSTS': [], 'STARFRUIT': [], 'ORCHIDS': []}
-
+        self.conversions = 0
+        
         for key, val in state.position.items():
             self.position[key] = val
 
         result['STARFRUIT'] += self.order_starfruit(state)
+        result['AMETHYSTS'] += self.order_amethysts(state)
         result['ORCHIDS'] += self.order_orchids(state)
+        conversions = self.conversions
 
-        for product, order_depth in state.order_depths.items():
-            if product == "AMETHYSTS":
-
-                best_ask, best_ask_amount = list(order_depth.sell_orders.items())[0]
-                best_bid, best_bid_amount = list(order_depth.buy_orders.items())[0]
-
-                if (best_bid > 10000):
-                    result[product].append(Order(product, best_bid, -best_bid_amount))  # The bid and ask amount impact market.
-                elif (best_ask < 10000):
-                    result[product].append(Order(product, best_ask, -best_ask_amount))
-
-                if (best_bid == 9995):
-                    result[product].append(Order(product, 9996, 10))
-                elif (best_bid == 9996):
-                    result[product].append(Order(product, 9997, 10))
-                elif (best_bid == 9997):
-                    result[product].append(Order(product, 9998, 10))
-
-                if (best_ask == 10005):
-                    result[product].append(Order(product, 10004, -10))
-                elif (best_ask == 10004):
-                    result[product].append(Order(product, 10003, -10))
-                elif (best_ask == 10003):
-                    result[product].append(Order(product, 10002, -10))
-
-        traderData = "yhlee"
-        conversions = 0
+        traderData = "hwjang"
 
         logger.flush(state, result, conversions, traderData)
-        return result, conversions, traderData
 
-# prosperity2bt ~\PycharmProjects\IMC-Prosperity-2024\juhyungkang\trader_regression_ju_modified.py 1
+        return result, conversions, traderData
