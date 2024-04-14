@@ -133,6 +133,8 @@ class Trader:
     
     starfruit_midprice = deque(maxlen=len(reg_params))
 
+    conversions = 0
+
     def prepare_data(self, product):
         return (
             self.position[product],
@@ -164,10 +166,21 @@ class Trader:
         book_ask = sorted(order_depth.sell_orders.items())
         book_bid = sorted(order_depth.buy_orders.items(), key=lambda x: -x[0])
 
+        wap = 0 # order book size weighted average price
+        total = 0
+        for k in order_depth.sell_orders:
+            if k:
+                wap += k * (-order_depth.sell_orders[k])
+                total -= order_depth.sell_orders[k]
+        for k in order_depth.buy_orders:
+            if k:
+                wap += k * order_depth.buy_orders[k]
+                total += order_depth.buy_orders[k]
+
+        wap /= total
+
         cur_obs = state.observations.conversionObservations
 
-        #export_sell_prc = state.observations.bidPrice - state.observations.transportFees - state.observations.exportTariff
-        #import_buy_prc = state.observations.askPrice + state.observations.transportFees + state.observations.importTariff
         export_sell_prc = cur_obs[product].bidPrice - cur_obs[product].transportFees - cur_obs[product].exportTariff
         import_buy_prc = cur_obs[product].askPrice + cur_obs[product].transportFees + cur_obs[product].importTariff
 
@@ -175,7 +188,19 @@ class Trader:
 
         buy_positions = curr_position
         for ask_price, vol in book_ask:
-            if buy_positions < position_limit and (ask_price <= export_sell_prc or (curr_position < 0 and ask_price == export_sell_prc + 1)):
+            # buy at island, sell abroad arbitrage
+            # if buy_positions > 0: ##and (ask_price < export_sell_prc)
+            #     # sell abroad
+            #     self.conversions = -buy_positions
+            #     break
+            if buy_positions < position_limit and (ask_price < export_sell_prc or (curr_position < 0 and ask_price == export_sell_prc + 1)):
+                # buy at island
+                order_for = min(-vol, position_limit - buy_positions)
+                buy_positions += order_for
+                assert (order_for >= 0)
+                orders.append(Order(product, ask_price, order_for))
+            # if no arbitrage trade based on wap
+            elif buy_positions < position_limit and wap > ask_price:
                 order_for = min(-vol, position_limit - buy_positions)
                 buy_positions += order_for
                 assert (order_for >= 0)
@@ -183,7 +208,19 @@ class Trader:
 
         sell_positions = curr_position
         for bid_price, vol in book_bid:
-            if sell_positions > -position_limit and (bid_price >= import_buy_prc or (curr_position > 0 and bid_price + 1 == import_buy_prc)):
+            # sell at island, buy abroad arbitrage
+            # if sell_positions < 0: ##and (bid_price > import_buy_prc)
+            #     # buy abroad
+            #     self.conversions = -sell_positions
+            #     break
+            if sell_positions > -position_limit and (bid_price > import_buy_prc or (curr_position > 0 and bid_price + 1 == import_buy_prc)):
+                # sell at island
+                order_for = max(-vol, -position_limit - sell_positions)
+                sell_positions += order_for
+                assert (order_for <= 0)
+                orders.append(Order(product, bid_price, order_for))
+            # if no arbitrage trade based on wap
+            elif sell_positions > -position_limit and wap < bid_price:
                 order_for = max(-vol, -position_limit - sell_positions)
                 sell_positions += order_for
                 assert (order_for <= 0)
@@ -272,6 +309,8 @@ class Trader:
         print("traderData: " + state.traderData)
         print("Observations: " + str(state.observations))
 
+        self.conversions = 0
+
         result = {'AMETHYSTS': [], 'STARFRUIT': [], 'ORCHIDS': []}
 
         for key, val in state.position.items():
@@ -282,7 +321,7 @@ class Trader:
         result['ORCHIDS'] += self.order_orchids(state)
         
         traderData = "hwjang"
-        conversions = 0
+        conversions = self.conversions
 
         logger.flush(state, result, conversions, traderData)
 
