@@ -208,10 +208,10 @@ class Trader:
         buy_positions = curr_position
         for ask_price, vol in book_ask:
             # buy at island, sell abroad arbitrage
-            if buy_positions > 0 and (ask_price < export_sell_prc or (wap < ask_price)):
-                # sell abroad
-                self.conversions = -buy_positions
-                break
+            # if buy_positions > 0 and (ask_price < export_sell_prc or (wap < ask_price)):
+            #     # sell abroad
+            #     self.conversions = -buy_positions
+            #     break
             if buy_positions < position_limit and (ask_price < export_sell_prc or (curr_position < 0 and ask_price == export_sell_prc + 1)):
                 # buy at island
                 order_for = min(-vol, position_limit - buy_positions)
@@ -228,10 +228,10 @@ class Trader:
         sell_positions = curr_position
         for bid_price, vol in book_bid:
             # sell at island, buy abroad arbitrage
-            if sell_positions < 0 and (bid_price > import_buy_prc or (wap > bid_price)):
-                # buy abroad
-                self.conversions = -sell_positions
-                break
+            # if sell_positions < 0 and (bid_price > import_buy_prc or (wap > bid_price)):
+            #     # buy abroad
+            #     self.conversions = -sell_positions
+            #     break
             if sell_positions > -position_limit and (bid_price > import_buy_prc or (curr_position > 0 and bid_price + 1 == import_buy_prc)):
                 # sell at island
                 order_for = max(-vol, -position_limit - sell_positions)
