@@ -148,6 +148,8 @@ class Trader:
     prev_orchids_wap = 0
     prev_orchids_pred = 0
 
+    orchids_buy_prc, orchids_sell_prc = 0, 0
+
     def prepare_data(self, product):
         return (
             self.position[product],
@@ -179,19 +181,6 @@ class Trader:
         book_ask = sorted(order_depth.sell_orders.items())
         book_bid = sorted(order_depth.buy_orders.items(), key=lambda x: -x[0])
 
-        wap = 0  # order book size weighted average price
-        total = 0
-        for k in order_depth.sell_orders:
-            if k:
-                wap += k * (-order_depth.sell_orders[k])
-                total -= order_depth.sell_orders[k]
-        for k in order_depth.buy_orders:
-            if k:
-                wap += k * order_depth.buy_orders[k]
-                total += order_depth.buy_orders[k]
-
-        wap /= total
-
         cur_obs = state.observations.conversionObservations
 
         export_sell_prc = cur_obs[product].bidPrice - cur_obs[product].transportFees - cur_obs[product].exportTariff
@@ -199,55 +188,38 @@ class Trader:
 
         orders: list[Order] = []
 
-        ################ Testing P&L calculation if trade closed within island ##################
-        # if state.timestamp == 0:
-        #     orders.append(Order(product, book_ask[0][0], -book_ask[0][1]))
-        # elif state.timestamp == 100:
-        #     orders.append(Order(product, book_bid[0][0], -book_bid[0][1]))
-        # return orders
-        ##########################################################################################
-
         buy_positions = curr_position
         for ask_price, vol in book_ask:
-            # buy at island, sell abroad arbitrage
-            # if buy_positions > 0 and (ask_price < export_sell_prc or (wap < ask_price)):
-            #     # sell abroad
-            #     self.conversions = -buy_positions
-            #     break
+            if buy_positions != 0 and self.orchids_buy_prc < export_sell_prc:
+                self.conversions = -buy_positions
+                self.orchids_buy_prc = 0
             if buy_positions < position_limit and (
-                    ask_price < export_sell_prc or (curr_position < 0 and ask_price == export_sell_prc + 1)):
+                    ask_price < export_sell_prc):  # or (curr_position < 0 and ask_price == export_sell_prc + 1)):
                 # buy at island
-                order_for = min(-vol, position_limit - buy_positions)
+                order_for = position_limit - buy_positions  # min(-vol, position_limit - buy_positions)
                 buy_positions += order_for
                 assert (order_for >= 0)
                 orders.append(Order(product, ask_price, order_for))
-            # if no arbitrage trade based on wap
-            elif buy_positions < position_limit and wap > ask_price:
-                order_for = min(-vol, position_limit - buy_positions)
-                buy_positions += order_for
-                assert (order_for >= 0)
-                orders.append(Order(product, ask_price, order_for))
+                self.orchids_buy_prc += order_for * ask_price
+
+        if buy_positions != 0:
+            self.orchids_buy_prc /= buy_positions
 
         sell_positions = curr_position
         for bid_price, vol in book_bid:
-            # sell at island, buy abroad arbitrage
-            # if sell_positions < 0 and (bid_price > import_buy_prc or (wap > bid_price)):
-            #     # buy abroad
-            #     self.conversions = -sell_positions
-            #     break
+            if sell_positions != 0 and self.orchids_sell_prc > import_buy_prc:
+                self.conversions = -sell_positions
+                self.orchids_sell_prc = 0
             if sell_positions > -position_limit and (
-                    bid_price > import_buy_prc or (curr_position > 0 and bid_price + 1 == import_buy_prc)):
+                    bid_price > import_buy_prc):  # or (curr_position > 0 and bid_price + 1 == import_buy_prc)):
                 # sell at island
-                order_for = max(-vol, -position_limit - sell_positions)
+                order_for = -position_limit - sell_positions  # max(-vol, -position_limit - sell_positions)
                 sell_positions += order_for
                 assert (order_for <= 0)
                 orders.append(Order(product, bid_price, order_for))
-            # if no arbitrage trade based on wap
-            elif sell_positions > -position_limit and wap < bid_price:
-                order_for = max(-vol, -position_limit - sell_positions)
-                sell_positions += order_for
-                assert (order_for <= 0)
-                orders.append(Order(product, bid_price, order_for))
+                self.orchids_sell_prc -= order_for * bid_price
+        if sell_positions != 0:
+            self.orchids_sell_prc /= (-sell_positions)
 
         return orders
 

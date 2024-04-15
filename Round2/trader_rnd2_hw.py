@@ -112,12 +112,11 @@ class Logger:
 
 logger = Logger()
 
-
 class Trader:
     position = {'AMETHYSTS': 0, 'STARFRUIT': 0, 'ORCHIDS': 0}
     POSITION_LIMIT = {'AMETHYSTS': 20, 'STARFRUIT': 20, 'ORCHIDS': 100}
     
-    reg_params = [
+    starfruit_reg_params = [
         0.006305986347540827,
         -0.01214216608632497,
         0.009966507857309953,
@@ -129,24 +128,22 @@ class Trader:
         0.7189835095609063
     ]
     
-    reg_intercept = 0.6951698609096012
+    starfruit_reg_intercept = 0.6951698609096012
     
-    starfruit_midprice = deque(maxlen=len(reg_params))
+    starfruit_midprice = deque(maxlen=len(starfruit_reg_params))
+
+    orchids_reg_intercept = 0.5529136448478766 
+    orchids_reg_params = [
+        -2.10434807e-03, -5.42746759e-03,  8.87177642e-03, -6.40110869e-03,
+        5.77493886e-03, -5.94693972e-04, -5.01163871e-03, -3.23051743e-03,
+        1.59362230e-02, -5.45898258e-03, -2.94750033e-03, -5.76994740e-03,
+        9.26883850e-04,  1.97981622e-03,  1.69280738e-02, -8.55105816e-03,
+        -7.62958119e-03,  1.00749032e-02, -1.24811554e-02,  1.00505265e+00,
+        -4.93967959e-03
+    ]
+    orchids_midprice = deque(maxlen=len(orchids_reg_params)-1)
 
     conversions = 0
-
-    orchids_lagged_params = [
-        15.3870,
-        0.6384,
-        0.1914,
-        0.1073,
-        0.0487
-    ]
-
-    prev_orchids_wap = 0
-    prev_orchids_pred = 0
-
-    orchids_buy_prc, orchids_sell_prc = 0, 0
 
     def prepare_data(self, product):
         return (
@@ -164,105 +161,15 @@ class Trader:
 
         return int(round(res / total_vol))
 
-    def compute_prediction(self):
-        predict = self.reg_intercept
-        for coef, val in zip(self.reg_params, self.starfruit_midprice):
+    def compute_prediction(self, intercept, params, prices):
+        predict = intercept
+        for coef, val in zip(params, prices):
             predict += coef * val
-
         return int(round(predict))
-
-    def order_orchids(self, state):
-        product = 'ORCHIDS'
-        curr_position, position_limit = self.prepare_data(product)
-        order_depth: OrderDepth = state.order_depths[product]
-
-        book_ask = sorted(order_depth.sell_orders.items())
-        book_bid = sorted(order_depth.buy_orders.items(), key=lambda x: -x[0])
-
-        wap = 0 # order book size weighted average price
-        total = 0
-        for k in order_depth.sell_orders:
-            if k:
-                wap += k * (-order_depth.sell_orders[k])
-                total -= order_depth.sell_orders[k]
-        for k in order_depth.buy_orders:
-            if k:
-                wap += k * order_depth.buy_orders[k]
-                total += order_depth.buy_orders[k]
-
-        wap /= total
-
-        cur_obs = state.observations.conversionObservations
-
-        export_sell_prc = cur_obs[product].bidPrice - cur_obs[product].transportFees - cur_obs[product].exportTariff
-        import_buy_prc = cur_obs[product].askPrice + cur_obs[product].transportFees + cur_obs[product].importTariff
-
-        orders: list[Order] = []
-
-        ################ Testing P&L calculation if trade closed within island ##################
-        # if state.timestamp == 0:
-        #     orders.append(Order(product, book_ask[0][0], -book_ask[0][1]))
-        # elif state.timestamp == 100:
-        #     orders.append(Order(product, book_bid[0][0], -book_bid[0][1]))
-        # return orders
-        ##########################################################################################
-
-        buy_positions = curr_position
-        for ask_price, vol in book_ask:
-            # buy at island, sell abroad arbitrage
-            # if buy_positions > 0 and (ask_price > export_sell_prc): #or (wap < ask_price)):
-            #     # sell abroad
-            #     self.conversions = -buy_positions
-            #     break
-            if buy_positions != 0 and self.orchids_buy_prc < export_sell_prc:
-                self.conversions = -buy_positions
-                self.orchids_buy_prc = 0
-            if buy_positions < position_limit and (ask_price < export_sell_prc):# or (curr_position < 0 and ask_price == export_sell_prc + 1)):
-                # buy at island
-                order_for = position_limit - buy_positions #min(-vol, position_limit - buy_positions)
-                buy_positions += order_for
-                assert (order_for >= 0)
-                orders.append(Order(product, ask_price, order_for))
-                self.orchids_buy_prc += order_for*ask_price
-            # if no arbitrage trade based on wap
-            # elif buy_positions < position_limit and wap > ask_price:
-            #     order_for = min(-vol, position_limit - buy_positions)
-            #     buy_positions += order_for
-            #     assert (order_for >= 0)
-            #     orders.append(Order(product, ask_price, order_for))
-        if buy_positions != 0:
-            self.orchids_buy_prc /= buy_positions
-
-        sell_positions = curr_position
-        for bid_price, vol in book_bid:
-            # sell at island, buy abroad arbitrage
-            # if sell_positions < 0 and (bid_price > import_buy_prc or (wap > bid_price)):
-            #     # buy abroad
-            #     self.conversions = -sell_positions
-            #     break
-            if sell_positions != 0 and self.orchids_sell_prc > import_buy_prc:
-                self.conversions = -sell_positions
-                self.orchids_sell_prc = 0
-            if sell_positions > -position_limit and (bid_price > import_buy_prc):# or (curr_position > 0 and bid_price + 1 == import_buy_prc)):
-                # sell at island
-                order_for = -position_limit - sell_positions #max(-vol, -position_limit - sell_positions)
-                sell_positions += order_for
-                assert (order_for <= 0)
-                orders.append(Order(product, bid_price, order_for))
-                self.orchids_sell_prc -= order_for*bid_price
-            # if no arbitrage trade based on wap
-            # elif sell_positions > -position_limit and wap < bid_price:
-            #     order_for = max(-vol, -position_limit - sell_positions)
-            #     sell_positions += order_for
-            #     assert (order_for <= 0)
-            #     orders.append(Order(product, bid_price, order_for))
-        if sell_positions != 0:
-            self.orchids_sell_prc /= (-sell_positions)
-
-        return orders
 
     def order_starfruit(self, state):
         product = 'STARFRUIT'
+        orders: list[Order] = []
 
         curr_position, position_limit = self.prepare_data('STARFRUIT')
         order_depth: OrderDepth = state.order_depths[product]
@@ -270,19 +177,22 @@ class Trader:
         book_ask = sorted(order_depth.sell_orders.items())
         book_bid = sorted(order_depth.buy_orders.items(), key=lambda x: -x[0])
         
-        best_ask_price = self.weighted_price(book_ask)
-        best_bid_price = self.weighted_price(book_bid)
+        weighted_ask_price = self.weighted_price(book_ask)
+        weighted_bid_price = self.weighted_price(book_bid)
 
-        self.starfruit_midprice.append((best_ask_price + best_bid_price) / 2)
+        self.starfruit_midprice.append((weighted_ask_price + weighted_bid_price) / 2)
+        predict_price = self.compute_prediction(
+            self.starfruit_reg_intercept,
+            self.starfruit_reg_params,
+            self.starfruit_midprice
+        )
 
         if len(self.starfruit_midprice) == self.starfruit_midprice.maxlen:
-            predict_bid = self.compute_prediction() - 1
-            predict_ask = self.compute_prediction() + 1
+            predict_bid = predict_price - 1
+            predict_ask = predict_price + 1
         else:
             predict_bid = -int(1e9)
             predict_ask = int(1e9)
-
-        orders: list[Order] = []
 
         buy_positions = curr_position
         for ask_price, vol in book_ask:
@@ -292,7 +202,7 @@ class Trader:
                 assert (order_for >= 0)
                 orders.append(Order(product, ask_price, order_for))
 
-        high_bid = min(best_bid_price + 1, predict_bid)
+        high_bid = min(weighted_bid_price + 1, predict_bid)
         if buy_positions < position_limit:
             orders.append(Order(product, high_bid, position_limit - buy_positions))
 
@@ -304,7 +214,7 @@ class Trader:
                 assert (order_for <= 0)
                 orders.append(Order(product, bid_price, order_for))
 
-        low_ask = max(best_ask_price - 1, predict_ask)
+        low_ask = max(weighted_ask_price - 1, predict_ask)
         if sell_positions > -position_limit:
             orders.append(Order(product, low_ask, -position_limit - sell_positions))
 
@@ -337,24 +247,98 @@ class Trader:
         
         return orders
 
+    def order_orchids(self, state):
+        orders: list[Order] = []
+        product = 'ORCHIDS'
+        curr_position, position_limit = self.prepare_data(product)
+        order_depth: OrderDepth = state.order_depths[product]
 
+        observation = state.observations.conversionObservations[product]
+
+        book_ask = sorted(order_depth.sell_orders.items())
+        book_bid = sorted(order_depth.buy_orders.items(), key=lambda x: -x[0])
+        
+        # weighted_ask_price = self.weighted_price(book_ask)
+        # weighted_bid_price = self.weighted_price(book_bid)
+
+        # self.orchids_midprice.append((weighted_ask_price + weighted_bid_price) / 2)
+        # predict_price = self.compute_prediction(
+        #     self.orchids_reg_intercept,
+        #     self.orchids_reg_params,
+        #     self.orchids_midprice
+        # )
+
+        # if len(self.orchids_midprice) == self.orchids_midprice.maxlen:
+        #     predict_bid = predict_price - 1
+        #     predict_ask = predict_price + 1
+        # else:
+        #     predict_bid = -int(1e9)
+        #     predict_ask = int(1e9)
+
+        # buy_positions = curr_position
+        # for ask_price, vol in book_ask:
+        #     if buy_positions < position_limit and (ask_price <= predict_bid or (curr_position < 0 and ask_price == predict_bid + 1)):
+        #         order_for = min(-vol, position_limit - buy_positions)
+        #         buy_positions += order_for
+        #         assert (order_for >= 0)
+        #         orders.append(Order(product, ask_price, order_for))
+
+        # high_bid = min(weighted_bid_price + 1, predict_bid)
+        # if buy_positions < position_limit:
+        #     orders.append(Order(product, high_bid, position_limit - buy_positions))
+
+        # sell_positions = curr_position
+        # for bid_price, vol in book_bid:
+        #     if sell_positions > -position_limit and (bid_price >= predict_ask or (curr_position > 0 and bid_price + 1 == predict_ask)):
+        #         order_for = max(-vol, -position_limit - sell_positions)
+        #         sell_positions += order_for
+        #         assert (order_for <= 0)
+        #         orders.append(Order(product, bid_price, order_for))
+
+        # low_ask = max(weighted_ask_price - 1, predict_ask)
+        # if sell_positions > -position_limit:
+        #     orders.append(Order(product, low_ask, -position_limit - sell_positions))
+
+
+        adj_bid_price = observation.bidPrice - observation.transportFees - observation.exportTariff
+        adj_ask_price = observation.askPrice + observation.transportFees + observation.importTariff
+
+        # if curr_position != 0:
+        #     self.conversions -= curr_position
+
+        for ask_price, vol in book_ask:
+            if (ask_price < adj_bid_price):
+                order_for = min(position_limit - curr_position, -vol)
+                orders.append(Order(product, ask_price, order_for))
+                self.conversions -= order_for
+ 
+        for bid_price, vol in book_bid:
+            if (adj_ask_price < bid_price):
+                order_for = max(-position_limit - curr_position, -vol)
+                orders.append(Order(product, bid_price, order_for))
+                self.conversions -= order_for
+
+        return orders
+    
     def run(self, state: TradingState):
-        print("traderData: " + state.traderData)
-        print("Observations: " + str(state.observations))
+        logger.print("traderData: " + state.traderData)
+        logger.print("Observations: " + str(state.observations))
 
-        self.conversions = 0
-
-        result = {'AMETHYSTS': [], 'STARFRUIT': [], 'ORCHIDS': []}
+        result = {
+            'STARFRUIT': [],
+            'AMETHYSTS': [],
+            'ORCHIDS' : []
+        }
 
         for key, val in state.position.items():
             self.position[key] = val
 
-        result['STARFRUIT'] += self.order_starfruit(state)
-        result['AMETHYSTS'] += self.order_amethysts(state)
-        result['ORCHIDS'] += self.order_orchids(state)
+        # result['STARFRUIT'] = self.order_starfruit(state)
+        # result['AMETHYSTS'] = self.order_amethysts(state)
+        result['ORCHIDS'] = self.order_orchids(state)
         
         traderData = "hwjang"
-        conversions = self.conversions
+        conversions = self.conversions  
 
         logger.flush(state, result, conversions, traderData)
 
