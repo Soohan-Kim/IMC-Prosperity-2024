@@ -137,17 +137,6 @@ class Trader:
 
     conversions = 0
 
-    orchids_lagged_params = [
-        15.3870,
-        0.6384,
-        0.1914,
-        0.1073,
-        0.0487
-    ]
-
-    prev_orchids_wap = 0
-    prev_orchids_pred = 0
-
     orchids_buy_prc, orchids_sell_prc = 0, 0
 
     def prepare_data(self, product):
@@ -191,35 +180,28 @@ class Trader:
         buy_positions = curr_position
         for ask_price, vol in book_ask:
             if buy_positions != 0 and self.orchids_buy_prc < export_sell_prc:
+                # if price discrepancy still exists after going long, sell abroad
                 self.conversions = -buy_positions
                 self.orchids_buy_prc = 0
-            if buy_positions < position_limit and (
-                    ask_price < export_sell_prc):  # or (curr_position < 0 and ask_price == export_sell_prc + 1)):
+            if buy_positions < position_limit and (ask_price < export_sell_prc):
                 # buy at island
-                order_for = position_limit - buy_positions  # min(-vol, position_limit - buy_positions)
-                buy_positions += order_for
-                assert (order_for >= 0)
+                order_for = position_limit - buy_positions
                 orders.append(Order(product, ask_price, order_for))
-                self.orchids_buy_prc += order_for * ask_price
-
-        if buy_positions != 0:
-            self.orchids_buy_prc /= buy_positions
+                self.orchids_buy_prc = ask_price
+            break
 
         sell_positions = curr_position
         for bid_price, vol in book_bid:
             if sell_positions != 0 and self.orchids_sell_prc > import_buy_prc:
+                # if price discrepancy still exists after going short, buy back abroad
                 self.conversions = -sell_positions
                 self.orchids_sell_prc = 0
-            if sell_positions > -position_limit and (
-                    bid_price > import_buy_prc):  # or (curr_position > 0 and bid_price + 1 == import_buy_prc)):
+            if sell_positions > -position_limit and (bid_price > import_buy_prc):
                 # sell at island
-                order_for = -position_limit - sell_positions  # max(-vol, -position_limit - sell_positions)
-                sell_positions += order_for
-                assert (order_for <= 0)
+                order_for = -position_limit - sell_positions
                 orders.append(Order(product, bid_price, order_for))
-                self.orchids_sell_prc -= order_for * bid_price
-        if sell_positions != 0:
-            self.orchids_sell_prc /= (-sell_positions)
+                self.orchids_sell_prc = bid_price
+            break
 
         return orders
 
