@@ -146,8 +146,8 @@ class Trader:
     orchids_buy_prc, orchids_sell_prc = 0, 0
 
     correction = 379.4904833333333
-    enter_threshold = 100
-    clear_threshold = 20
+    enter_threshold = 70
+    clear_threshold = 0
 
     def prepare_data(self, product):
         return (
@@ -172,50 +172,34 @@ class Trader:
 
         return int(round(predict))
     
-    def clear_position(self, long_basket, prod_list, position_dict, limit_dict, ask_dict, bid_dict):
+    def clear_basket_position(self, long_basket, prod_list, position_dict, limit_dict, ask_dict, bid_dict):
         orders_dict = defaultdict(list)
         for prod in prod_list:
             if (long_basket and prod != 'GIFT_BASKET') or (not long_basket and prod == 'GIFT_BASKET'):
                 best_bid_price, bid_amount = bid_dict[prod]
-                order_for_best = max(-bid_amount, -position_dict[prod])
-                if order_for_best < 0:
-                    orders_dict[prod].append(Order(prod, best_bid_price, order_for_best))
-                # order_for_rest = -position_dict[prod]-order_for_best
-                # if order_for_rest < 0:
-                #     orders_dict[prod].append(Order(prod, best_bid_price + 1, order_for_rest//2))
-                #     orders_dict[prod].append(Order(prod, best_bid_price + 2, order_for_rest//2))
+                order_for = max(-bid_amount, -position_dict[prod])
+                if order_for < 0:
+                    orders_dict[prod].append(Order(prod, best_bid_price, order_for))
             else:
                 best_ask_price, ask_amount = ask_dict[prod]
-                order_for_best = min(-ask_amount, -position_dict[prod])
-                if order_for_best > 0:
-                    orders_dict[prod].append(Order(prod, best_ask_price, order_for_best))
-                # order_for_rest = -position_dict[prod]-order_for_best
-                # if order_for_rest > 0:
-                #     orders_dict[prod].append(Order(prod, best_ask_price - 1, order_for_rest//2))
-                #     orders_dict[prod].append(Order(prod, best_ask_price - 2, order_for_rest//2))
+                order_for = min(-ask_amount, -position_dict[prod])
+                if order_for > 0:
+                    orders_dict[prod].append(Order(prod, best_ask_price, order_for))
         return orders_dict
     
-    def enter_position(self, long_basket, prod_list, position_dict, limit_dict, ask_dict, bid_dict):
+    def enter_basket_position(self, long_basket, prod_list, position_dict, limit_dict, ask_dict, bid_dict):
         orders_dict = defaultdict(list)
         for prod in prod_list:
             if (long_basket and prod != 'GIFT_BASKET') or (not long_basket and prod == 'GIFT_BASKET'):
                 best_bid_price, bid_amount = bid_dict[prod]
-                order_for_best = max(-bid_amount, -limit_dict[prod]-position_dict[prod])
-                if order_for_best < 0:
-                    orders_dict[prod].append(Order(prod, best_bid_price, order_for_best))
-                # order_for_rest = -limit_dict[prod]-position_dict[prod]-order_for_best
-                # if order_for_rest < 0:
-                #     orders_dict[prod].append(Order(prod, best_bid_price + 1, order_for_rest//2))
-                #     orders_dict[prod].append(Order(prod, best_bid_price + 2, order_for_rest//2))
+                order_for = max(-bid_amount, -limit_dict[prod]-position_dict[prod])
+                if order_for < 0:
+                    orders_dict[prod].append(Order(prod, best_bid_price, order_for))
             else:
                 best_ask_price, ask_amount = ask_dict[prod]
-                order_for_best = min(-ask_amount, limit_dict[prod]-position_dict[prod])
-                if order_for_best > 0:
-                    orders_dict[prod].append(Order(prod, best_ask_price, order_for_best))
-                # order_for_rest = limit_dict[prod]-position_dict[prod]-order_for_best
-                # if order_for_rest > 0:
-                #     orders_dict[prod].append(Order(prod, best_ask_price - 1, order_for_rest//2))
-                #     orders_dict[prod].append(Order(prod, best_ask_price - 2, order_for_rest//2))
+                order_for = min(-ask_amount, limit_dict[prod]-position_dict[prod])
+                if order_for > 0:
+                    orders_dict[prod].append(Order(prod, best_ask_price, order_for))
         return orders_dict
     
     def order_bakset(self, state):
@@ -259,17 +243,17 @@ class Trader:
         
         # Exit short-basket (long-basket)
         if -self.enter_threshold < price_residual < -self.clear_threshold:
-            return self.clear_position(True, prod_list, position_dict, limit_dict, ask_dict, bid_dict)
+            return self.clear_basket_position(True, prod_list, position_dict, limit_dict, ask_dict, bid_dict)
         # Exit long-basket (short-basket)
         elif self.clear_threshold < price_residual < self.enter_threshold:
-            return self.clear_position(False, prod_list, position_dict, limit_dict, ask_dict, bid_dict)
+            return self.clear_basket_position(False, prod_list, position_dict, limit_dict, ask_dict, bid_dict)
     
         # Enter long-basket
         if price_residual < -self.enter_threshold:
-            return self.enter_position(True, prod_list, position_dict, limit_dict, ask_dict, bid_dict)
+            return self.enter_basket_position(True, prod_list, position_dict, limit_dict, ask_dict, bid_dict)
         # Enter short-basket
         elif self.enter_threshold < price_residual:
-            return self.enter_position(False, prod_list, position_dict, limit_dict, ask_dict, bid_dict)
+            return self.enter_basket_position(False, prod_list, position_dict, limit_dict, ask_dict, bid_dict)
     
         return orders_dict
     
