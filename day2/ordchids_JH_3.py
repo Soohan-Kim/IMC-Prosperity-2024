@@ -253,6 +253,7 @@ class Trader:
                 order_for = min(-vol, position_limit - curr_position)
                 if order_for > 0:
                     orders.append(Order(product, ask_price, order_for))
+                    orders.append(Order(product, ask_price - 1, order_for))
                     curr_position += order_for
 
         # Buying from the foreign market to sell in the local market if it's profitable
@@ -261,6 +262,7 @@ class Trader:
                 order_for = max(-vol, -position_limit - curr_position)
                 if order_for < 0:
                     orders.append(Order(product, bid_price, order_for))
+                    orders.append(Order(product, bid_price + 1, order_for))
                     curr_position += order_for
 
         return orders
