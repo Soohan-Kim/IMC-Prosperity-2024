@@ -146,8 +146,8 @@ class Trader:
     orchids_buy_prc, orchids_sell_prc = 0, 0
 
     correction = 379.4904833333333
-    enter_threshold = 70
-    clear_threshold = 0
+    enter_threshold = 100
+    clear_threshold = 20
 
     def prepare_data(self, product):
         return (
@@ -180,19 +180,19 @@ class Trader:
                 order_for_best = max(-bid_amount, -position_dict[prod])
                 if order_for_best < 0:
                     orders_dict[prod].append(Order(prod, best_bid_price, order_for_best))
-                order_for_rest = -position_dict[prod]-order_for_best
-                if order_for_rest < 0:
-                    orders_dict[prod].append(Order(prod, best_bid_price + 1, order_for_rest//2))
-                    orders_dict[prod].append(Order(prod, best_bid_price + 2, order_for_rest//2))
+                # order_for_rest = -position_dict[prod]-order_for_best
+                # if order_for_rest < 0:
+                #     orders_dict[prod].append(Order(prod, best_bid_price + 1, order_for_rest//2))
+                #     orders_dict[prod].append(Order(prod, best_bid_price + 2, order_for_rest//2))
             else:
                 best_ask_price, ask_amount = ask_dict[prod]
                 order_for_best = min(-ask_amount, -position_dict[prod])
                 if order_for_best > 0:
                     orders_dict[prod].append(Order(prod, best_ask_price, order_for_best))
-                order_for_rest = -position_dict[prod]-order_for_best
-                if order_for_rest > 0:
-                    orders_dict[prod].append(Order(prod, best_ask_price - 1, order_for_rest//2))
-                    orders_dict[prod].append(Order(prod, best_ask_price - 2, order_for_rest//2))
+                # order_for_rest = -position_dict[prod]-order_for_best
+                # if order_for_rest > 0:
+                #     orders_dict[prod].append(Order(prod, best_ask_price - 1, order_for_rest//2))
+                #     orders_dict[prod].append(Order(prod, best_ask_price - 2, order_for_rest//2))
         return orders_dict
     
     def enter_position(self, long_basket, prod_list, position_dict, limit_dict, ask_dict, bid_dict):
@@ -203,19 +203,19 @@ class Trader:
                 order_for_best = max(-bid_amount, -limit_dict[prod]-position_dict[prod])
                 if order_for_best < 0:
                     orders_dict[prod].append(Order(prod, best_bid_price, order_for_best))
-                order_for_rest = -limit_dict[prod]-position_dict[prod]-order_for_best
-                if order_for_rest < 0:
-                    orders_dict[prod].append(Order(prod, best_bid_price + 1, order_for_rest//2))
-                    orders_dict[prod].append(Order(prod, best_bid_price + 2, order_for_rest//2))
+                # order_for_rest = -limit_dict[prod]-position_dict[prod]-order_for_best
+                # if order_for_rest < 0:
+                #     orders_dict[prod].append(Order(prod, best_bid_price + 1, order_for_rest//2))
+                #     orders_dict[prod].append(Order(prod, best_bid_price + 2, order_for_rest//2))
             else:
                 best_ask_price, ask_amount = ask_dict[prod]
                 order_for_best = min(-ask_amount, limit_dict[prod]-position_dict[prod])
                 if order_for_best > 0:
                     orders_dict[prod].append(Order(prod, best_ask_price, order_for_best))
-                order_for_rest = limit_dict[prod]-position_dict[prod]-order_for_best
-                if order_for_rest > 0:
-                    orders_dict[prod].append(Order(prod, best_ask_price - 1, order_for_rest//2))
-                    orders_dict[prod].append(Order(prod, best_ask_price - 2, order_for_rest//2))
+                # order_for_rest = limit_dict[prod]-position_dict[prod]-order_for_best
+                # if order_for_rest > 0:
+                #     orders_dict[prod].append(Order(prod, best_ask_price - 1, order_for_rest//2))
+                #     orders_dict[prod].append(Order(prod, best_ask_price - 2, order_for_rest//2))
         return orders_dict
     
     def order_bakset(self, state):
