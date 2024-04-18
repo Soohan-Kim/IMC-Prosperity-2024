@@ -113,11 +113,13 @@ class Logger:
 
 
 logger = Logger()
-
+WINDOW = 200
 
 class Trader:
-    position = {'AMETHYSTS': 0, 'STARFRUIT': 0, 'ORCHIDS': 0, 'CHOCOLATE': 0, 'STRAWBERRIES': 0, 'ROSES': 0, 'GIFT_BASKET': 0}
-    POSITION_LIMIT = {'AMETHYSTS': 20, 'STARFRUIT': 20, 'ORCHIDS': 100, 'CHOCOLATE': 250, 'STRAWBERRIES': 350, 'ROSES': 60, 'GIFT_BASKET': 60}
+    position = {'AMETHYSTS': 0, 'STARFRUIT': 0, 'ORCHIDS': 0, 'CHOCOLATE': 0, 'STRAWBERRIES': 0, 'ROSES': 0,
+                'GIFT_BASKET': 0}
+    POSITION_LIMIT = {'AMETHYSTS': 20, 'STARFRUIT': 20, 'ORCHIDS': 100, 'CHOCOLATE': 250, 'STRAWBERRIES': 350,
+                      'ROSES': 60, 'GIFT_BASKET': 60}
 
     reg_params = [
         0.006305986347540827,
@@ -130,16 +132,13 @@ class Trader:
         0.19978102347281332,
         0.7189835095609063
     ]
-
     reg_intercept = 0.6951698609096012
-
     starfruit_midprice = deque(maxlen=len(reg_params))
 
     conversions = 0
-
     orchids_buy_prc, orchids_sell_prc = 0, 0
 
-    spread_mean, spread_std = 379.4904833333333, 76.4243821737498*0.5
+    spreads = deque(maxlen=WINDOW)
 
     def prepare_data(self, product):
         return (
@@ -163,86 +162,6 @@ class Trader:
             predict += coef * val
 
         return int(round(predict))
-
-    def order_round3(self, state):
-        product_books = {
-            'GIFT_BASKET': {'ask':None, 'bid':None, 'mid':0},
-            'ROSES': {'ask':None, 'bid':None, 'mid':0},
-            'STRAWBERRIES': {'ask':None, 'bid':None, 'mid':0},
-            'CHOCOLATE': {'ask':None, 'bid':None, 'mid':0}
-        }
-
-        epsilon = 10
-
-        ret = {'GIFT_BASKET': [], 'ROSES': [], 'STRAWBERRIES': [], 'CHOCOLATE': []}
-
-        for product in product_books:
-            order_depth: OrderDepth = state.order_depths[product]
-            product_books[product]['ask'] = sorted(order_depth.sell_orders.items())
-            product_books[product]['bid'] = sorted(order_depth.buy_orders.items(), key=lambda x: -x[0])
-            product_books[product]['mid'] = (product_books[product]['ask'][0][0] + product_books[product]['bid'][0][0])//2
-
-         # Compute spread portfolio price
-        spread = product_books['GIFT_BASKET']['mid'] - product_books['ROSES']['mid'] - 6*product_books['STRAWBERRIES']['mid'] - 4*product_books['CHOCOLATE']['mid']
-
-        order_base = 30
-
-        # 1st Entry
-        if 0 in [self.position['GIFT_BASKET'], self.position['ROSES'], self.position['STRAWBERRIES'], self.position['CHOCOLATE']]:
-
-            # Spread price >= mean + std
-            if spread >= self.spread_mean + self.spread_std:
-                #order_base = product_books['GIFT_BASKET']['bid'][0][1] # 28 max per one entry, but not filling especially for GIFT_BASKET
-
-                ret['GIFT_BASKET'].append(Order('GIFT_BASKET', product_books['GIFT_BASKET']['bid'][-1][0], -order_base))
-                ret['ROSES'].append(Order('ROSES', product_books['ROSES']['bid'][-1][0], -order_base))
-                ret['STRAWBERRIES'].append(Order('STRAWBERRIES', product_books['STRAWBERRIES']['bid'][-1][0], -order_base*6))
-                ret['CHOCOLATE'].append(Order('CHOCOLATE', product_books['CHOCOLATE']['bid'][-1][0], -order_base*4))
-            # Spread price <= mean - std
-            if spread <= self.spread_mean - self.spread_std:
-                #order_base = -product_books['GIFT_BASKET']['ask'][0][1]
-
-                ret['GIFT_BASKET'].append(Order('GIFT_BASKET', product_books['GIFT_BASKET']['ask'][-1][0], order_base))
-                ret['ROSES'].append(Order('ROSES', product_books['ROSES']['ask'][-1][0], order_base))
-                ret['STRAWBERRIES'].append(Order('STRAWBERRIES', product_books['STRAWBERRIES']['ask'][-1][0], order_base * 6))
-                ret['CHOCOLATE'].append(Order('CHOCOLATE', product_books['CHOCOLATE']['ask'][-1][0], order_base * 4))
-
-        # 2nd Entry & Exit
-        else:
-            # Spread price >= mean + 2*std
-            if spread >= self.spread_mean + 2*self.spread_std:
-                #order_base = product_books['GIFT_BASKET']['bid'][0][1]
-
-                ret['GIFT_BASKET'].append(Order('GIFT_BASKET', product_books['GIFT_BASKET']['bid'][-1][0], -order_base))
-                ret['ROSES'].append(Order('ROSES', product_books['ROSES']['bid'][-1][0], -order_base))
-                ret['STRAWBERRIES'].append(Order('STRAWBERRIES', product_books['STRAWBERRIES']['bid'][-1][0], -order_base*6))
-                ret['CHOCOLATE'].append(Order('CHOCOLATE', product_books['CHOCOLATE']['bid'][-1][0], -order_base*4))
-
-            # Spread price <= mean - 2*std
-            if spread <= self.spread_mean - 2*self.spread_std:
-                #order_base = -product_books['GIFT_BASKET']['ask'][0][1]
-
-                ret['GIFT_BASKET'].append(Order('GIFT_BASKET', product_books['GIFT_BASKET']['ask'][-1][0], order_base))
-                ret['ROSES'].append(Order('ROSES', product_books['ROSES']['ask'][-1][0], order_base))
-                ret['STRAWBERRIES'].append(Order('STRAWBERRIES', product_books['STRAWBERRIES']['ask'][-1][0], order_base * 6))
-                ret['CHOCOLATE'].append(Order('CHOCOLATE', product_books['CHOCOLATE']['ask'][-1][0], order_base * 4))
-
-            # Exit: Spread price within epsilon of mean
-            if spread >= self.spread_mean - epsilon and spread <= self.spread_mean + epsilon:
-                # Short spread case
-                if self.position['GIFT_BASKET'] < 0:
-                    ret['GIFT_BASKET'].append(Order('GIFT_BASKET', product_books['GIFT_BASKET']['ask'][-1][0], -self.position['GIFT_BASKET']))
-                    ret['ROSES'].append(Order('ROSES', product_books['ROSES']['ask'][-1][0], -self.position['ROSES']))
-                    ret['STRAWBERRIES'].append(Order('STRAWBERRIES', product_books['STRAWBERRIES']['ask'][-1][0], -self.position['STRAWBERRIES']))
-                    ret['CHOCOLATE'].append(Order('CHOCOLATE', product_books['CHOCOLATE']['ask'][-1][0], -self.position['CHOCOLATE']))
-                # Long spread case
-                else:
-                    ret['GIFT_BASKET'].append(Order('GIFT_BASKET', product_books['GIFT_BASKET']['bid'][-1][0], -self.position['GIFT_BASKET']))
-                    ret['ROSES'].append(Order('ROSES', product_books['ROSES']['bid'][-1][0], -self.position['ROSES']))
-                    ret['STRAWBERRIES'].append(Order('STRAWBERRIES', product_books['STRAWBERRIES']['bid'][-1][0], -self.position['STRAWBERRIES']))
-                    ret['CHOCOLATE'].append(Order('CHOCOLATE', product_books['CHOCOLATE']['bid'][-1][0], -self.position['CHOCOLATE']))
-
-        return ret
 
     def order_orchids(self, state):
         product = 'ORCHIDS'
@@ -365,27 +284,80 @@ class Trader:
 
         return orders
 
+    def compute_orders_basket(self, state):
+
+        orders = {'CHOCOLATE': [], 'STRAWBERRIES': [], 'ROSES': [], 'GIFT_BASKET': []}
+        products = ['CHOCOLATE', 'STRAWBERRIES', 'ROSES', 'GIFT_BASKET']
+        osell, obuy, best_sell, best_buy, worst_sell, worst_buy, mid_price, wg_buy, wg_sell = {}, {}, {}, {}, {}, {}, {}, {}, {}
+
+        for p in products:
+            order_depth = state.order_depths[p]
+            osell[p] = sorted(order_depth.sell_orders.items())
+            obuy[p] = sorted(order_depth.buy_orders.items(), key=lambda x: -x[0])
+
+            best_sell[p] = osell[p][0][0]
+            best_buy[p] = obuy[p][0][0]
+
+            worst_sell[p] = osell[p][-1][0]
+            worst_buy[p] = obuy[p][-1][0]
+
+            wg_buy[p] = self.weighted_price(obuy[p])
+            wg_sell[p] = self.weighted_price(osell[p])
+
+            mid_price[p] = (best_sell[p] + best_buy[p]) / 2
+
+        spread = mid_price['GIFT_BASKET'] - mid_price['CHOCOLATE'] * 4 - mid_price['STRAWBERRIES'] * 6 - mid_price[
+            'ROSES']
+        self.spreads.append(spread)
+
+        amt = 5
+
+        if len(self.spreads) == WINDOW:
+            avg_spread = sum(self.spreads)/WINDOW
+            std_spread = 0
+            for s in self.spreads:
+                std_spread += (s - avg_spread)**2
+            std_spread /= WINDOW
+            std_spread **= 0.5
+            spread_5 = sum(list(self.spreads)[-5:])/5
+
+            if spread_5 < avg_spread - 2*std_spread:
+                orders['GIFT_BASKET'].append(Order('GIFT_BASKET', worst_sell['GIFT_BASKET'], amt))
+                orders['CHOCOLATE'].append(Order('CHOCOLATE', worst_buy['CHOCOLATE'], -4*amt))
+                orders['STRAWBERRIES'].append(Order('STRAWBERRIES', worst_buy['STRAWBERRIES'], -6*amt))
+                orders['ROSES'].append(Order('ROSES', worst_buy['ROSES'], -amt))
+
+            elif spread_5 > avg_spread + 2*std_spread:
+                orders['GIFT_BASKET'].append(Order('GIFT_BASKET', worst_buy['GIFT_BASKET'], -amt))
+                orders['CHOCOLATE'].append(Order('CHOCOLATE', worst_sell['CHOCOLATE'], 4 * amt))
+                orders['STRAWBERRIES'].append(Order('STRAWBERRIES', worst_sell['STRAWBERRIES'], 6 * amt))
+                orders['ROSES'].append(Order('ROSES', worst_sell['ROSES'], amt))
+
+        return orders
+
     def run(self, state: TradingState):
         print("traderData: " + state.traderData)
         print("Observations: " + str(state.observations))
 
         self.conversions = 0
 
-        result = {'AMETHYSTS': [], 'STARFRUIT': [], 'ORCHIDS': [], 'CHOCOLATE': [], 'STRAWBERRIES': [], 'ROSES': [], 'GIFT_BASKET': []}
+        result = {'AMETHYSTS': [], 'STARFRUIT': [], 'ORCHIDS': [], 'CHOCOLATE': [],
+                  'STRAWBERRIES': [], 'ROSES': [], 'GIFT_BASKET': []}
 
         for key, val in state.position.items():
             self.position[key] = val
 
-        #result['STARFRUIT'] += self.order_starfruit(state)
-        #result['AMETHYSTS'] += self.order_amethysts(state)
-        #result['ORCHIDS'] += self.order_orchids(state)
-        rnd3_ords = self.order_round3(state)
-        result['GIFT_BASKET'] += rnd3_ords['GIFT_BASKET']
-        result['ROSES'] += rnd3_ords['ROSES']
-        result['STRAWBERRIES'] += rnd3_ords['STRAWBERRIES']
-        result['CHOCOLATE'] += rnd3_ords['CHOCOLATE']
+        # result['STARFRUIT'] += self.order_starfruit(state)
+        # result['AMETHYSTS'] += self.order_amethysts(state)
+        # result['ORCHIDS'] += self.order_orchids(state)
 
-        traderData = "hwjang"
+        orders = self.compute_orders_basket(state)
+        result['GIFT_BASKET'] += orders['GIFT_BASKET']
+        result['ROSES'] += orders['ROSES']
+        result['CHOCOLATE'] += orders['CHOCOLATE']
+        result['STRAWBERRIES'] += orders['STRAWBERRIES']
+
+        traderData = "yhlee"
         conversions = self.conversions
 
         logger.flush(state, result, conversions, traderData)
