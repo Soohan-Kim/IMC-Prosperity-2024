@@ -7,3 +7,8 @@ tutorial_logs2.csv
 tutorial_logs3.csv
 scratch.ipynb
 /.ipynb_checkpoints
+
+*.log
+*.csv
+.DS_Store
+*.pyc
