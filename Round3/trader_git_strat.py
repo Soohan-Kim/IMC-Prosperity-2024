@@ -347,9 +347,9 @@ class Trader:
         for key, val in state.position.items():
             self.position[key] = val
 
-        # result['STARFRUIT'] += self.order_starfruit(state)
-        # result['AMETHYSTS'] += self.order_amethysts(state)
-        # result['ORCHIDS'] += self.order_orchids(state)
+        result['STARFRUIT'] += self.order_starfruit(state)
+        result['AMETHYSTS'] += self.order_amethysts(state)
+        result['ORCHIDS'] += self.order_orchids(state)
 
         orders = self.compute_orders_basket(state)
         result['GIFT_BASKET'] += orders['GIFT_BASKET']
