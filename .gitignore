@@ -12,3 +12,4 @@ scratch.ipynb
 *.csv
 .DS_Store
 *.pyc
+*.zip
