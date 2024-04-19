@@ -241,12 +241,12 @@ class Trader:
         price_residual = mid_price_dict[basket] - self.correction - comb_price
         logger.print(f"Comb price : {comb_price}, Basket price : {mid_price_dict[basket]}, Residual : {price_residual}")
         
-        # Exit short-basket (long-basket)
-        if -self.enter_threshold < price_residual < -self.clear_threshold:
-            return self.clear_basket_position(True, prod_list, position_dict, limit_dict, ask_dict, bid_dict)
-        # Exit long-basket (short-basket)
-        elif self.clear_threshold < price_residual < self.enter_threshold:
-            return self.clear_basket_position(False, prod_list, position_dict, limit_dict, ask_dict, bid_dict)
+        # # Exit short-basket (long-basket)
+        # if -self.enter_threshold < price_residual < -self.clear_threshold:
+        #     return self.clear_basket_position(True, prod_list, position_dict, limit_dict, ask_dict, bid_dict)
+        # # Exit long-basket (short-basket)
+        # elif self.clear_threshold < price_residual < self.enter_threshold:
+        #     return self.clear_basket_position(False, prod_list, position_dict, limit_dict, ask_dict, bid_dict)
     
         # Enter long-basket
         if price_residual < -self.enter_threshold:
