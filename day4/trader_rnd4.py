@@ -156,10 +156,16 @@ class Trader:
     strawberries_ma50 = deque(maxlen=51)
     strawberries_ma250 = deque(maxlen=251)
 
+    ccn_stack = deque(maxlen=1000)
+    prev_ccn_mid = 0
+
     ccn_vol = 0.16
     rf_r = 0.0
-    est_err_lb = -5
-    est_err_ub = 12
+    est_err_lb = -3
+    est_err_ub = 3
+
+    ccn_order_amount = 30
+    cpn_order_amount = 60
 
     prev_cpn_ask = 0
     prev_cpn_ask_amount = 0 
@@ -455,8 +461,7 @@ class Trader:
 
         ccn_position, ccn_limit = self.prepare_data(CCN)
         cpn_position, cpn_limit = self.prepare_data(CPN)
-        ccn_order_amount = 60
-        cpn_order_amount = 60
+        
         order_ccn: OrderDepth = state.order_depths[CCN]
         order_cpn: OrderDepth = state.order_depths[CPN]
 
@@ -475,16 +480,33 @@ class Trader:
         else:
             cpn_bid, cpn_bid_amount = self.prev_cpn_bid, self.prev_cpn_bid_amount
         cpn_mid = (cpn_ask + cpn_bid) / 2
+        
+        # if self.prev_ccn_mid == 0:
+        #     self.prev_ccn_mid = ccn_mid
+        # ccn_pct_change = (ccn_mid - self.prev_ccn_mid) / ccn_mid
+        # self.ccn_stack.append(ccn_pct_change)
+        # if len(self.ccn_stack) < 100:
+        #     return orders
+        # vol = np.std(self.ccn_stack) * np.sqrt(1000) * np.sqrt(252)
+        # logger.print("Coconut volatility estimated during the day : ", vol)
 
         opt_est = self.bs_formula(ccn_mid, self.ccn_vol, self.rf_r)
         est_err = opt_est - cpn_mid
         logger.print("Estimated option price : ", opt_est)
         # Coupon is overrated -> short coupon, long coconut
         if est_err < self.est_err_lb:
-            orders[CPN].append(Order(CPN, cpn_bid, max(-cpn_limit - cpn_position, -cpn_order_amount)))
+            orders[CPN].append(Order(CPN, cpn_bid, max(-cpn_limit - cpn_position, -self.cpn_order_amount)))
         # Coupon is underrated -> long coupon, short coconut
         elif est_err > self.est_err_ub:
-            orders[CPN].append(Order(CPN, cpn_ask, min(cpn_limit - cpn_position, cpn_order_amount)))
+            orders[CPN].append(Order(CPN, cpn_ask, min(cpn_limit - cpn_position, self.cpn_order_amount)))
+        # Clear short coupon position
+        elif 0 < est_err and cpn_position > 0:
+            orders[CPN].append(Order(CPN, cpn_ask, min(cpn_limit - cpn_position, self.cpn_order_amount)))
+        # Clear long coupon position
+        elif est_err < 0 and cpn_position < 0:
+            orders[CPN].append(Order(CPN, cpn_bid, max(-cpn_limit - cpn_position, -self.cpn_order_amount)))
+        
+        self.prev_ccn_mid = ccn_mid
 
         return orders
 
