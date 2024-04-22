@@ -115,6 +115,8 @@ class Logger:
 logger = Logger()
 WINDOW = 200
 rc_WINDOW = 100
+sb_lag1, sb_lag2 = 50, 100
+ccnt_lag1, ccnt_lag2 = 50, 100
 
 class Trader:
     position = {'AMETHYSTS': 0, 'STARFRUIT': 0, 'ORCHIDS': 0, 'CHOCOLATE': 0, 'STRAWBERRIES': 0, 'ROSES': 0,
@@ -156,7 +158,10 @@ class Trader:
     s_prices = np.array([])
 
     coconut_spreads = np.array([])
-    coupon_spreads = np.array([])
+    #coupon_spreads = np.array([])
+    ccnt_prices = deque(maxlen=ccnt_lag2+1)
+
+    sb_prices = deque(maxlen=sb_lag2+1)
 
     def prepare_data(self, product):
         return (
@@ -408,7 +413,7 @@ class Trader:
                 #orders['STRAWBERRIES'].append(Order('STRAWBERRIES', worst_buy['STRAWBERRIES'], -amt))
                 #orders['ROSES'].append(Order('ROSES', worst_buy['ROSES'], -2*amt))
 
-            # CHOCOLATE & STRAWBERRIES pair trades based on trailing covariance thresholding
+            # CHOCOLATE & STRAWBERRIES pair trades based on trailing covariance thresholding (only CHOCOLATE seems to work)
             avg_cs_spread = (self.c_prices - self.s_prices).mean()
             std_cs_spread = (self.c_prices - self.s_prices).std()
 
@@ -417,20 +422,41 @@ class Trader:
             if cs_spread < avg_cs_spread - 1.5*std_cs_spread:
                 if corr_cs_spread > 0.1: # Maybe add another step to decide to both long or short based on trend
                     orders['CHOCOLATE'].append(Order('CHOCOLATE', worst_buy['CHOCOLATE'], -10))
-                    orders['STRAWBERRIES'].append(Order('STRAWBERRIES', worst_buy['STRAWBERRIES'], -19))
+                    #orders['STRAWBERRIES'].append(Order('STRAWBERRIES', worst_buy['STRAWBERRIES'], -19))
 
                 elif corr_cs_spread < -0.1:
                     orders['CHOCOLATE'].append(Order('CHOCOLATE', worst_sell['CHOCOLATE'], 10))
-                    orders['STRAWBERRIES'].append(Order('STRAWBERRIES', worst_buy['STRAWBERRIES'], -19))
+                    #orders['STRAWBERRIES'].append(Order('STRAWBERRIES', worst_buy['STRAWBERRIES'], -19))
 
             elif cs_spread > avg_cs_spread + 1.5*std_cs_spread:
                 if corr_cs_spread > 0.1: # Maybe add another step to decide to both long or short based on trend
                     orders['CHOCOLATE'].append(Order('CHOCOLATE', worst_sell['CHOCOLATE'], 10))
-                    orders['STRAWBERRIES'].append(Order('STRAWBERRIES', worst_sell['STRAWBERRIES'], 19))
+                    #orders['STRAWBERRIES'].append(Order('STRAWBERRIES', worst_sell['STRAWBERRIES'], 19))
 
                 elif corr_cs_spread < -0.1:
                     orders['CHOCOLATE'].append(Order('CHOCOLATE', worst_buy['CHOCOLATE'], -10))
-                    orders['STRAWBERRIES'].append(Order('STRAWBERRIES', worst_sell['STRAWBERRIES'], 19))
+                    #orders['STRAWBERRIES'].append(Order('STRAWBERRIES', worst_sell['STRAWBERRIES'], 19))
+
+        # Switch to momentum-based for STRAWBERRIES => not trading - too instable
+        # self.sb_prices.append(mid_price['STRAWBERRIES'])
+        #
+        # if len(self.sb_prices) == sb_lag2+1:
+        #     lag1_ret = (self.sb_prices[-1] - self.sb_prices[-sb_lag1])/self.sb_prices[-sb_lag1]
+        #     lag2_ret = (self.sb_prices[-1] - self.sb_prices[1])/self.sb_prices[1]
+        #     lag1_ret_prev = (self.sb_prices[-2] - self.sb_prices[-sb_lag1-1])/self.sb_prices[-sb_lag1-1]
+        #     #lag2_ret_prev = (self.sb_prices[-2] - self.sb_prices[0]) / self.sb_prices[0]
+        #
+        #     if lag1_ret_prev < lag1_ret and lag1_ret_prev > 0 and lag2_ret > 0 and lag2_ret < lag1_ret:
+        #         orders['STRAWBERRIES'].append(Order('STRAWBERRIES', worst_sell['STRAWBERRIES'], 35))
+        #
+        #     if lag1_ret_prev > lag1_ret and lag1_ret_prev < 0 and lag2_ret < 0 and lag2_ret > lag1_ret:
+        #         orders['STRAWBERRIES'].append(Order('STRAWBERRIES', worst_buy['STRAWBERRIES'], -35))
+
+            # if lag1_ret_prev < lag2_ret_prev and lag1_ret > lag2_ret:
+            #     orders['STRAWBERRIES'].append(Order('STRAWBERRIES', worst_sell['STRAWBERRIES'], 60))
+            #
+            # if lag1_ret_prev > lag2_ret_prev and lag1_ret < lag2_ret:
+            #     orders['STRAWBERRIES'].append(Order('STRAWBERRIES', worst_buy['STRAWBERRIES'], -60))
 
         if len(self.rc_spreads) == rc_WINDOW: # ROSES spread trading based on CHOCOLATE signal
             avg_spread = sum(self.spreads)/rc_WINDOW
@@ -475,8 +501,8 @@ class Trader:
         spread = mid_price['COCONUT_COUPON'] - 0.5*mid_price['COCONUT']
         self.coconut_spreads = np.append(self.coconut_spreads, spread)
 
-        coupon_spread = mid_price['COCONUT'] - 1.8246*mid_price['COCONUT_COUPON']
-        self.coupon_spreads = np.append(self.coupon_spreads, coupon_spread)
+        #coupon_spread = mid_price['COCONUT'] - 1.8246*mid_price['COCONUT_COUPON']
+        #self.coupon_spreads = np.append(self.coupon_spreads, coupon_spread)
 
         base_amt = 30
 
@@ -492,14 +518,34 @@ class Trader:
                 orders['COCONUT_COUPON'].append(Order('COCONUT_COUPON', worst_sell['COCONUT_COUPON'], 2 * base_amt))
                 #orders['COCONUT'].append(Order('COCONUT', worst_buy['COCONUT'], -base_amt))
 
-            coupon_spread_mean = self.coupon_spreads.mean()
-            coupon_spread_std = self.coupon_spreads.std()
+        # if self.coupon_spreads.shape[0] == WINDOW:
+        #     coupon_spread_mean = self.coupon_spreads.mean()
+        #     coupon_spread_std = self.coupon_spreads.std()
+        #
+        #     if coupon_spread > coupon_spread_mean + coupon_spread_std:
+        #         #orders['COCONUT'].append(Order('COCONUT', worst_buy['COCONUT'], -base_amt))
+        #         orders['COCONUT'].append(Order('COCONUT', worst_sell['COCONUT'], base_amt))
+        #
+        #     if coupon_spread < coupon_spread_mean - coupon_spread_std:
+        #         #orders['COCONUT'].append(Order('COCONUT', worst_sell['COCONUT'], base_amt))
+        #         orders['COCONUT'].append(Order('COCONUT', worst_buy['COCONUT'], -base_amt))
+        #
+        #     self.coupon_spreads = self.coupon_spreads[1:]
 
-            if coupon_spread > coupon_spread_mean + coupon_spread_std:
-                orders['COCONUT'].append(Order('COCONUT', worst_buy['COCONUT'], -base_amt))
+        # Switching to momentum for COCONUT
+        self.ccnt_prices.append(mid_price['COCONUT'])
 
-            if coupon_spread < coupon_spread_mean - coupon_spread_std:
-                orders['COCONUT'].append(Order('COCONUT', worst_sell['COCONUT'], base_amt))
+        if len(self.ccnt_prices) == ccnt_lag2+1:
+            lag1_ret = (self.ccnt_prices[-1] - self.ccnt_prices[-ccnt_lag1])/self.ccnt_prices[-ccnt_lag1]
+            lag2_ret = (self.ccnt_prices[-1] - self.ccnt_prices[1])/self.ccnt_prices[1]
+            lag1_ret_prev = (self.ccnt_prices[-2] - self.ccnt_prices[-ccnt_lag1-1])/self.ccnt_prices[-ccnt_lag1-1]
+            #lag2_ret_prev = (self.ccnt_prices[-2] - self.ccnt_prices[0]) / self.ccnt_prices[0]
+
+            if lag1_ret_prev < lag1_ret and lag1_ret_prev > 0 and lag2_ret > 0 and lag2_ret < lag1_ret:
+                orders['COCONUT'].append(Order('COCONUT', worst_sell['COCONUT'], 30))
+
+            if lag1_ret_prev > lag1_ret and lag1_ret_prev < 0 and lag2_ret < 0 and lag2_ret > lag1_ret:
+                orders['COCONUT'].append(Order('COCONUT', worst_buy['COCONUT'], -30))
 
         return orders
 
